@@ -1,0 +1,29 @@
+{
+  "name": "chemcanvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Draw 2D molecular structures on a web canvas with fluid gestures.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:artifact": "vite build --mode artifact && node scripts/inline-artifact.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexchimera/chemcanvas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/alexchimera/chemcanvas/issues"
+  },
+  "homepage": "https://github.com/alexchimera/chemcanvas#readme",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

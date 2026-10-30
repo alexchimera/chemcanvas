@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ChemCanvas</title>
+    <meta name="description" content="Sketch 2D molecular structures with fluid gestures: drag for chains, loop for rings, scribble to erase." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4.5 26 10.25v11.5L16 27.5 6 21.75v-11.5z' fill='none' stroke='%2314181d' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M9.5 19.5c3.5-5.5 9-7.5 13.5-5' fill='none' stroke='%232456d6' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..700&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <canvas class="board" id="board" aria-label="Drawing canvas. Drag to draw bonds, draw a loop for a ring, scribble to erase." role="img"></canvas>
+
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path class="hex" d="M16 4.5 26 10.25v11.5L16 27.5 6 21.75v-11.5z" />
+            <path class="swoosh" d="M9.5 19.5c3.5-5.5 9-7.5 13.5-5" />
+          </svg>
+          <span>ChemCanvas</span>
+        </div>
+        <nav class="toolbar" aria-label="Canvas actions">
+          <button class="tool" id="undo" data-icon="undo" aria-label="Undo" title="Undo (Ctrl/⌘ Z, or two-finger tap)" disabled></button>
+          <button class="tool" id="redo" data-icon="redo" aria-label="Redo" title="Redo (Ctrl/⌘ Shift Z, or three-finger tap)" disabled></button>
+          <span class="sep" aria-hidden="true"></span>
+          <button class="tool" id="fit" data-icon="fit" aria-label="Fit drawing to screen" title="Fit drawing to screen (0)"></button>
+          <button class="tool" id="clear" data-icon="trash" aria-label="Clear canvas" title="Clear canvas"></button>
+          <span class="sep" aria-hidden="true"></span>
+          <button class="tool" id="export" data-icon="share" aria-label="Export or import" aria-haspopup="menu" aria-expanded="false" title="Export or import"></button>
+          <button class="tool" id="guide-toggle" data-icon="guide" aria-label="Gesture guide" aria-pressed="false" title="Gesture guide"></button>
+          <button class="tool" id="theme" data-icon="moon" aria-label="Switch between light and dark" title="Light or dark"></button>
+        </nav>
+      </header>
+
+      <div class="menu" id="export-menu" role="menu" hidden>
+        <p class="menu-label">Copy</p>
+        <button type="button" role="menuitem" data-action="copy-smiles">SMILES</button>
+        <button type="button" role="menuitem" data-action="copy-mol">Molfile (V2000)</button>
+        <button type="button" role="menuitem" data-action="copy-svg">SVG image</button>
+        <p class="menu-label" data-download>Download</p>
+        <button type="button" role="menuitem" data-action="download-png" data-download>PNG image</button>
+        <button type="button" role="menuitem" data-action="download-svg" data-download>SVG image</button>
+        <button type="button" role="menuitem" data-action="download-mol" data-download>Molfile (.mol)</button>
+        <p class="menu-label">Import</p>
+        <button type="button" role="menuitem" data-action="open-mol">Open a .mol file…</button>
+        <p class="menu-note">Or paste a Molfile anywhere with Ctrl/⌘ V.</p>
+        <input type="file" id="mol-file" accept=".mol,.sdf,chemical/x-mdl-molfile,text/plain" hidden />
+      </div>
+
+      <section class="guide" id="guide" aria-labelledby="guide-title" hidden>
+        <div class="guide-head">
+          <h2 id="guide-title">Gestures</h2>
+          <button class="icon-btn" id="guide-close" data-icon="close" aria-label="Close gesture guide" title="Close"></button>
+        </div>
+        <ul>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="ink" d="M8 28c16-1 36-2 56-3" />
+              <path class="bond" d="M8 28l11-6.5 11 6.5 11-6.5 11 6.5 11-6.5" />
+            </svg>
+            <div><b>Drag</b><span>A short flick is one bond. Keep going for a zig-zag chain. Start on an atom to grow from it.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="ink" d="M36 8.5c9.5-.2 16.8 7.4 16.3 16.2-.5 9-8.4 15.6-16.9 15.1-9-.5-15.6-8.1-15-16.4.6-8.6 7.6-14.7 16.2-14.4" />
+              <path class="bond" d="M36 11l11.26 6.5v13L36 37l-11.26-6.5v-13z" />
+            </svg>
+            <div><b>Draw a loop</b><span>A circle makes a six-membered ring. Draw 3 to 8 corners for other sizes. Loop over a bond to fuse.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="bond" d="M36 11l11.26 6.5v13L36 37l-11.26-6.5v-13z M44.67 19v10 M36 34l-8.67-5 M27.33 19 36 14" />
+              <circle class="ink" cx="36" cy="24" r="5" />
+            </svg>
+            <div><b>Circle inside a ring</b><span>Adds alternating double bonds. Do it again to remove them. Tapping inside a ring works too.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="bond" d="M20 32 52 16 M25.4 33.8l24.8-12.4" />
+              <circle class="dot" cx="36" cy="24" r="3.2" />
+              <circle class="ring" cx="36" cy="24" r="8.5" />
+            </svg>
+            <div><b>Tap a bond</b><span>Single, double, triple. Hold, then let go, for wedges and hashes.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <text x="31" y="29">N</text>
+              <circle class="ring" cx="36" cy="24" r="16" />
+              <circle class="dot" cx="36" cy="8" r="2.6" />
+              <circle class="dot faint" cx="49.9" cy="16" r="2.6" />
+              <circle class="dot faint" cx="49.9" cy="32" r="2.6" />
+              <circle class="dot faint" cx="36" cy="40" r="2.6" />
+              <circle class="dot faint" cx="22.1" cy="32" r="2.6" />
+              <circle class="dot faint" cx="22.1" cy="16" r="2.6" />
+            </svg>
+            <div><b>Tap an atom</b><span>Opens the element wheel: N, O, S, halogens, charges, or type any symbol.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="bond" d="M8 30l14-8 14 8 14-8 14 8" />
+              <path class="erase" d="M35 19l13 11-15-4 16-2-15 8 13 0" />
+            </svg>
+            <div><b>Scribble</b><span>Erases whatever it covers.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="bond" d="M24 15l8.66 5v10L24 35l-8.66-5V20z" />
+              <circle class="ring" cx="32.66" cy="20" r="5" />
+              <path class="ink" d="M42 25h20m-6-6 6 6-6 6" />
+            </svg>
+            <div><b>Hold, then drag</b><span>Moves an atom. Hold a bond to move the whole molecule.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <circle class="dot" cx="28" cy="27" r="3.2" />
+              <circle class="dot" cx="44" cy="27" r="3.2" />
+              <circle class="ring" cx="28" cy="27" r="7.5" />
+              <circle class="ring" cx="44" cy="27" r="7.5" />
+              <path class="bond thin" d="M42 12h-12a5 5 0 0 0 0 0M30 12l4-4M30 12l4 4" />
+            </svg>
+            <div><b>Two-finger tap</b><span>Undo (three fingers redo). Pinch or drag with two fingers to zoom and pan.</span></div>
+          </li>
+        </ul>
+        <p class="keys">
+          Hover an atom and press <kbd>N</kbd> <kbd>O</kbd> <kbd>S</kbd> <kbd>F</kbd> <kbd>P</kbd> <kbd>C</kbd> <kbd>H</kbd>,
+          <kbd>L</kbd>&nbsp;Cl, <kbd>B</kbd>&nbsp;Br, <kbd>I</kbd>, <kbd>+</kbd>/<kbd>−</kbd> for charge.
+          Hover a bond: <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>W</kbd> wedge, <kbd>H</kbd> hash.
+          <kbd>Del</kbd> deletes. Scroll or space-drag to pan; mouse wheel or Ctrl&#8209;scroll to zoom; <kbd>0</kbd> fits.
+        </p>
+      </section>
+
+      <footer class="readout" id="readout" aria-live="polite">
+        <div class="readout-main">
+          <span class="formula" id="formula"></span>
+          <span class="weight" id="weight"></span>
+          <span class="tag" id="example-tag" hidden>Example</span>
+          <span class="issues" id="issues" hidden></span>
+        </div>
+        <div class="readout-smiles">
+          <code id="smiles"></code>
+          <button class="icon-btn" id="copy-smiles" data-icon="copy" aria-label="Copy SMILES" title="Copy SMILES"></button>
+        </div>
+      </footer>
+
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+        <span id="toast-text"></span>
+        <button type="button" id="toast-action" hidden></button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
