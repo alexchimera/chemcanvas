@@ -166,16 +166,19 @@ async function copy(text: string | null, what: string): Promise<void> {
 
 copySmiles.addEventListener('click', () => void copy(app.smiles(), 'SMILES'));
 
-function download(name: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
+/** Save a file. Left out of the preview build, whose host page doesn't allow downloads. */
+const download = PREVIEW
+  ? null
+  : (name: string, blob: Blob): void => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
 
 // ——— Export menu ———
 
@@ -216,13 +219,13 @@ exportMenu.addEventListener('click', (e) => {
       void copy(app.svg(), 'SVG');
       break;
     case 'download-svg':
-      download('molecule.svg', new Blob([app.svg() ?? ''], { type: 'image/svg+xml' }));
+      download?.('molecule.svg', new Blob([app.svg() ?? ''], { type: 'image/svg+xml' }));
       break;
     case 'download-mol':
-      download('molecule.mol', new Blob([app.molfile()], { type: 'chemical/x-mdl-molfile' }));
+      download?.('molecule.mol', new Blob([app.molfile()], { type: 'chemical/x-mdl-molfile' }));
       break;
     case 'download-png':
-      void app.png().then((blob) => blob && download('molecule.png', blob));
+      if (download) void app.png().then((blob) => blob && download('molecule.png', blob));
       break;
     case 'open-mol':
       fileInput.click();
