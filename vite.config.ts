@@ -8,6 +8,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: mode === 'artifact' ? 'dist-artifact' : 'dist',
     emptyOutDir: true,
+    // One bundle and no dynamic imports, so the preload polyfill would be dead code.
+    modulePreload: { polyfill: false },
   },
   test: {
     include: ['tests/**/*.test.ts'],
