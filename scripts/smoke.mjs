@@ -147,6 +147,36 @@ const browser = await chromium.launch();
   await page.close();
 }
 
+// ——— Two people in one shared drawing ———
+{
+  const context = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const a = await context.newPage();
+  const b = await context.newPage();
+  const errors = [];
+  for (const p of [a, b]) p.on('pageerror', (e) => errors.push(String(e)));
+  await a.goto(url);
+  await a.evaluate(() => localStorage.clear());
+  await a.reload();
+  await a.waitForTimeout(300);
+  await a.click('#guide-close');
+  await a.click('#share');
+  await a.click('#room-start');
+  await a.waitForFunction(() => document.querySelector('#room-status')?.dataset.status === 'live', null, { timeout: 5000 });
+  const link = await a.inputValue('#room-link');
+  check('starting a shared drawing gives a link', /[?&]room=[a-z0-9]{6}$/.test(link), link);
+  await b.goto(link);
+  const synced = (n) => b.waitForFunction((k) => window.chemcanvas.mol.atoms.size === k, n, { timeout: 5000 }).then(() => true, () => false);
+  check('opening the link shows the same drawing', await synced(await a.evaluate(() => window.chemcanvas.mol.atoms.size)));
+  await a.click('#share');
+  await a.mouse.move(300, 600);
+  await a.mouse.down();
+  for (let x = 310; x <= 520; x += 10) await a.mouse.move(x, 600);
+  await a.mouse.up();
+  check('a chain drawn by one person appears for the other', await synced(await a.evaluate(() => window.chemcanvas.mol.atoms.size)));
+  check('no page errors (shared)', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
 // ——— Phone, touch ———
 {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -157,14 +187,20 @@ const browser = await chromium.launch();
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.waitForTimeout(300);
+  check('no horizontal scrolling on a phone', !(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
+  await page.tap('#guide-close');
   const cdp = await context.newCDPSession(page);
   const touch = (type, points) =>
     cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
   const atoms = () => page.evaluate(() => window.chemcanvas.mol.atoms.size);
 
-  check('no horizontal scrolling on a phone', !(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
-  await page.tap('#guide-close');
-  await page.tap('#clear');
+  // Small phones clear the canvas from the canvas menu: hold empty paper, let go.
+  await touch('touchStart', [[340, 640]]);
+  await page.waitForTimeout(520);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+  await page.tap('.ctx-item:has-text("Clear canvas")');
+  check('the canvas menu clears the canvas on a phone', (await atoms()) === 0);
 
   await touch('touchStart', [[60, 380]]);
   for (let x = 70; x <= 330; x += 10) await touch('touchMove', [[x, 380]]);

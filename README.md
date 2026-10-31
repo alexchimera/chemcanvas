@@ -6,7 +6,8 @@ out. Each stroke is read as it happens and cleaned up into a properly laid-out
 skeletal formula, with a live preview of what it will become before you lift
 your finger.
 
-Works with a mouse, trackpad, pen or finger. No dependencies at runtime.
+Works with a mouse, trackpad, pen or finger, alone or with other people on
+the same drawing (see [Drawing together](#drawing-together)).
 
 ## Gestures
 
@@ -99,6 +100,30 @@ Copied structures go on the clipboard as Molfiles, so they paste into other
 editors as well as back into ChemCanvas; a copy pasted here keeps its place on
 the hex paper.
 
+## Drawing together
+
+The people button in the toolbar opens **Draw together**. *Start a shared
+drawing* takes what's on your canvas into a new room and copies its link
+(`…/?room=k7x9qp`); anyone who opens the link, or types the code into *join
+one*, draws on the same canvas. Everyone sees each other's changes as they
+land, each other's pointers with names on them, and what each other has
+selected, in their own colour. The badge on the button counts the people
+there.
+
+- **Undo is yours.** Ctrl/⌘ Z takes back your own last change, never someone
+  else's. If someone has since changed the same atom or bond, that part is
+  left as they made it.
+- **Nothing is lost offline.** Changes you make while the connection drops
+  are kept and sent when it comes back; the button shows when you're offline.
+- **Your view is your own.** Pan, zoom, select and use menus without moving
+  anyone else's canvas.
+- **Leaving** puts you back on your own drawing as you left it. The room keeps
+  going for the others, and reopening the link brings it back.
+- Pick the name others see in the panel; until then you get a random one
+  (*Swift Argon*, *Quiet Xenon*).
+
+Anyone with the link can edit, so share it like a document link.
+
 ## Cleaning up
 
 When a structure has drifted (atoms dragged about, molecules joined at odd
@@ -133,8 +158,19 @@ the browser between visits.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173, shared drawings included
 ```
+
+```bash
+npm run build
+npm start          # the production server on $PORT (default 3000)
+```
+
+`npm start` serves the built app and hosts the shared rooms on one port. Rooms
+live in memory; set `DATA_DIR` to a writable directory (a mounted volume, in
+production) to save them across restarts. Without it, a room that the server
+has forgotten is filled again from the copy kept in the browser of whoever
+opens it next.
 
 ```bash
 npm test           # unit tests (Vitest)
@@ -146,19 +182,21 @@ npm run build      # static site in dist/
 touch input. It needs Playwright (`npm i -D playwright && npx playwright install chromium`).
 
 `npm run build:artifact` produces `dist-artifact/chemcanvas.html`, a single
-self-contained page (inlined CSS and JS) without file downloads or a theme
-toggle, for embedding in a host page that controls those.
+self-contained page (inlined CSS and JS) without file downloads, a theme
+toggle or shared drawings, for embedding in a host page that controls those.
 
 ## How it works
 
 ```
 src/
   core/        molecule graph, valence and implicit H, rings (SSSR), placement geometry, clean-up layout,
-               selections (pick, turn, flip, copy), analysis (exact mass, isotopes), edits, history
+               selections (pick, turn, flip, copy), analysis (exact mass, isotopes), edits, patches, history
+  collab/      shared-drawing client and the messages it exchanges with the server
   gestures/    stroke analysis, chain walker, ring placement, erase, and the plans they produce
   io/          SMILES writer, Molfile reader/writer
   render/      depiction (ACS-style), canvas and SVG painters, export
   ui/          interaction state machine, renderer, element wheel, context menus, selection bar, analysis panel
+server/        production server: static files and shared rooms over WebSockets
 ```
 
 - **Strokes become plans.** `gestures/interpret.ts` classifies the stroke so far
@@ -189,6 +227,18 @@ src/
   letting go makes it a tap; holding still for 0.42 s makes it a hold, which
   then becomes a menu on release or a move or selection on drag. A second
   finger turns any of these into a pinch without leaving anything behind.
+- **Edits are patches** (`core/patch.ts`). Every change is recorded as the
+  atoms and bonds it touched, before and after. Undo applies the patch
+  backwards, touching only what is still as the patch left it, and a shared
+  drawing sends the same patch to the server.
+- **Shared drawings** (`collab/client.ts`, `server/rooms.ts`). The server keeps
+  each room's drawing and the order changes reached it; browsers apply their
+  own changes at once and send them. What you see is always the server's copy
+  with your unconfirmed changes replayed on top, redone whenever someone
+  else's change arrives, so every browser applies every change in the same
+  order and ends up with the same drawing. Changes are per atom and per bond
+  (the later one wins), and each browser draws its new ids from its own
+  random range, so atoms added at the same moment never clash.
 - **Isotope patterns** (`core/analysis.ts`) are built atom by atom from the
   NIST isotope tables, binned by mass number with the mean mass kept per bin,
   and pruned below 10⁻⁹ of the tallest peak so large molecules stay cheap.
@@ -204,6 +254,9 @@ src/
 - SMILES output is Kekulé and non-canonical, and does not encode wedge/hash stereochemistry yet.
 - SMILES import is not supported yet; Molfiles can be imported.
 - No reaction arrows or text annotations yet.
+- Shared rooms are held by one server process, so run a single instance (or
+  add a shared store before scaling out). Two people dragging the same atom at
+  the same moment both see the last drop win, not a merge.
 - Exact masses and isotope patterns cover 37 common elements, from H to Bi.
   Any other element falls back to its average mass, and the panel marks those
   figures with ≈.

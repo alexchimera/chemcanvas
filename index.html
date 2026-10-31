@@ -32,6 +32,7 @@
           <button class="tool" id="tidy" data-icon="tidy" aria-label="Clean up structures" title="Clean up structures (T, or hold a bond and shake)"></button>
           <button class="tool" id="clear" data-icon="trash" aria-label="Clear canvas" title="Clear canvas"></button>
           <span class="sep" aria-hidden="true"></span>
+          <button class="tool" id="share" data-icon="users" aria-label="Draw together" aria-haspopup="dialog" aria-expanded="false" title="Draw together: share a link so others can draw with you"><span class="share-badge" id="share-badge" hidden></span></button>
           <button class="tool" id="export" data-icon="share" aria-label="Export or import" aria-haspopup="menu" aria-expanded="false" title="Export or import"></button>
           <button class="tool" id="guide-toggle" data-icon="guide" aria-label="Gesture guide" aria-pressed="false" title="Gesture guide"></button>
           <button class="tool" id="theme" data-icon="moon" aria-label="Switch between light and dark" title="Light or dark"></button>
@@ -52,6 +53,34 @@
         <p class="menu-note">Or paste a Molfile anywhere with Ctrl/⌘ V.</p>
         <input type="file" id="mol-file" accept=".mol,.sdf,chemical/x-mdl-molfile,text/plain" hidden />
       </div>
+
+      <section class="share" id="share-panel" role="dialog" aria-labelledby="share-title" hidden>
+        <div id="share-solo">
+          <h2 id="share-title">Draw together</h2>
+          <p>Start a shared drawing and send the link. Everyone who opens it draws on the same canvas, and you see each other's pointers as you go.</p>
+          <button type="button" class="primary" id="room-start">Start a shared drawing</button>
+          <p class="share-or"><span>or join one</span></p>
+          <form class="share-join" id="room-join">
+            <input id="room-code-input" placeholder="Room code or link" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Room code or link" />
+            <button type="submit">Join</button>
+          </form>
+        </div>
+        <div id="share-room" hidden>
+          <div class="share-head">
+            <h2>Shared drawing</h2>
+            <span class="share-status" id="room-status"></span>
+          </div>
+          <p class="share-code">Room <b id="room-code"></b></p>
+          <div class="share-link">
+            <input id="room-link" readonly aria-label="Link to this drawing" />
+            <button type="button" id="room-copy">Copy link</button>
+          </div>
+          <button type="button" class="secondary" id="room-send" hidden>Send the link…</button>
+          <ul class="share-people" id="room-people" aria-label="People here"></ul>
+          <button type="button" class="quiet" id="room-leave">Leave, and go back to my own drawing</button>
+        </div>
+        <label class="share-name">Your name <input id="my-name" maxlength="32" autocomplete="nickname" spellcheck="false" /></label>
+      </section>
 
       <section class="guide" id="guide" aria-labelledby="guide-title" hidden>
         <div class="guide-head">

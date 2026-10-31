@@ -1,4 +1,5 @@
 import './style.css';
+import { cleanName, COLLAB_PATH, newRoomCode, randomName, readRoomCode } from './collab/protocol';
 import { chargeText } from './core/chemistry';
 import { aspirin } from './example';
 import { ChemCanvasApp, type Readout } from './ui/app';
@@ -9,6 +10,7 @@ import { ICONS } from './ui/icons';
 const PREVIEW = import.meta.env.MODE === 'artifact';
 const GUIDE_KEY = 'chemcanvas:v1:guide';
 const THEME_KEY = 'chemcanvas:v1:theme';
+const NAME_KEY = 'chemcanvas:v1:name';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector(selector) as T;
 
@@ -137,6 +139,8 @@ const app = new ChemCanvasApp(appEl, $<HTMLCanvasElement>('#board'), {
   onTool(tool) {
     selectBtn.setAttribute('aria-pressed', String(tool === 'select'));
   },
+  onPeers: () => renderShare(),
+  onRoomStatus: () => renderShare(),
   toast,
 });
 
@@ -233,6 +237,134 @@ fileInput.addEventListener('change', async () => {
 
 if (PREVIEW) for (const el of document.querySelectorAll<HTMLElement>('[data-download]')) el.hidden = true;
 
+// ——— Draw together ———
+
+const shareBtn = $<HTMLButtonElement>('#share');
+const sharePanel = $('#share-panel');
+const shareBadge = $('#share-badge');
+const codeInput = $<HTMLInputElement>('#room-code-input');
+const linkInput = $<HTMLInputElement>('#room-link');
+const nameInput = $<HTMLInputElement>('#my-name');
+const sendBtn = $<HTMLButtonElement>('#room-send');
+let myName = cleanName(store.get(NAME_KEY)) || randomName();
+store.set(NAME_KEY, myName);
+nameInput.value = myName;
+
+const endpoint = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${COLLAB_PATH}`;
+
+function linkTo(code: string | null): string {
+  const url = new URL(location.href);
+  url.hash = '';
+  url.search = '';
+  if (code) url.searchParams.set('room', code);
+  return url.toString();
+}
+
+function enterRoom(code: string, bring: boolean): void {
+  app.joinRoom(code, { name: myName, endpoint: endpoint(), bring });
+  history.replaceState(null, '', linkTo(code));
+  exampleTag.hidden = true;
+  renderShare();
+}
+
+function renderShare(): void {
+  const code = app.room;
+  const status = app.roomStatus;
+  const people = app.people;
+  $('#share-solo').hidden = code !== null;
+  $('#share-room').hidden = code === null;
+  shareBadge.hidden = code === null;
+  shareBadge.textContent = String(Math.max(1, people.length));
+  shareBadge.dataset.status = status ?? '';
+  if (!code) return;
+  $('#room-code').textContent = code.toUpperCase();
+  linkInput.value = linkTo(code);
+  const statusEl = $('#room-status');
+  statusEl.dataset.status = status ?? '';
+  statusEl.textContent =
+    status === 'live' ? (people.length > 1 ? `Live · ${people.length} here` : 'Live · just you so far') : status === 'offline' ? 'Offline · reconnecting' : 'Connecting…';
+  $('#room-people').replaceChildren(
+    ...people.map((person, i) => {
+      const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = person.color;
+      li.append(dot, person.name);
+      if (i === 0) {
+        const you = document.createElement('span');
+        you.className = 'you';
+        you.textContent = '(you)';
+        li.append(you);
+      }
+      return li;
+    }),
+  );
+}
+
+function setShareOpen(open: boolean): void {
+  sharePanel.hidden = !open;
+  shareBtn.setAttribute('aria-expanded', String(open));
+  // Show the end of the link, where the room code is.
+  if (open) linkInput.scrollLeft = linkInput.scrollWidth;
+}
+
+shareBtn.addEventListener('click', () => setShareOpen(Boolean(sharePanel.hidden)));
+document.addEventListener('pointerdown', (e) => {
+  const target = e.target as Node;
+  if (!sharePanel.hidden && !sharePanel.contains(target) && !shareBtn.contains(target)) setShareOpen(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !sharePanel.hidden) setShareOpen(false);
+});
+
+$('#room-start').addEventListener('click', async () => {
+  const code = newRoomCode();
+  enterRoom(code, true);
+  toast((await copyText(linkTo(code))) ? 'Link copied: send it to anyone you want to draw with' : 'Shared drawing started: copy the link to invite people');
+});
+
+$('#room-join').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const code = readRoomCode(codeInput.value);
+  if (!code) {
+    toast('That isn’t a room code. Codes look like k7x9qp.');
+    return;
+  }
+  codeInput.value = '';
+  enterRoom(code, false);
+});
+
+$('#room-copy').addEventListener('click', async () => {
+  linkInput.select();
+  toast((await copyText(linkInput.value)) ? 'Link copied' : 'Copying was blocked; select the link and copy it yourself');
+});
+
+linkInput.addEventListener('focus', () => linkInput.select());
+
+// Phones can hand the link straight to a messaging app.
+sendBtn.hidden = typeof navigator.share !== 'function';
+sendBtn.addEventListener('click', () => {
+  void navigator.share({ title: 'ChemCanvas', text: 'Draw molecules with me', url: linkInput.value }).catch(() => {});
+});
+
+$('#room-leave').addEventListener('click', () => {
+  app.leaveRoom();
+  history.replaceState(null, '', linkTo(null));
+  renderShare();
+  setShareOpen(false);
+  toast('Back to your own drawing');
+});
+
+nameInput.addEventListener('change', () => {
+  myName = cleanName(nameInput.value) || myName;
+  nameInput.value = myName;
+  store.set(NAME_KEY, myName);
+  app.rename(myName);
+  renderShare();
+});
+
+if (PREVIEW) shareBtn.hidden = true;
+
 // ——— Gesture guide ———
 
 const guide = $('#guide');
@@ -268,6 +400,11 @@ if (PREVIEW) {
 setGuide(store.get(GUIDE_KEY) !== 'closed', false);
 const restored = app.start(aspirin);
 exampleTag.hidden = restored;
+
+// A link with ?room=… opens that shared drawing.
+const linkedRoom = readRoomCode(new URLSearchParams(location.search).get('room') ?? '');
+if (linkedRoom && !PREVIEW) enterRoom(linkedRoom, false);
+renderShare();
 
 // A console handle for power users and automated tests.
 Object.assign(window, { chemcanvas: app });

@@ -35,6 +35,11 @@ export class Molecule {
   readonly bonds = new Map<number, Bond>();
   /** Bumped on every mutation so derived data (rings) can be cached against it. */
   version = 0;
+  /**
+   * Where ids for new atoms and bonds come from. A shared drawing swaps in a
+   * source that can't hand out the same id as anyone else's.
+   */
+  idSource: (() => number) | null = null;
   private readonly adjacency = new Map<number, Set<number>>();
   private nextId = 1;
 
@@ -42,8 +47,12 @@ export class Molecule {
     return this.atoms.size === 0;
   }
 
+  private newId(): number {
+    return this.idSource ? this.idSource() : this.nextId++;
+  }
+
   addAtom(pos: Vec, element = 'C', charge = 0): Atom {
-    const atom: Atom = { id: this.nextId++, x: pos.x, y: pos.y, element, charge };
+    const atom: Atom = { id: this.newId(), x: pos.x, y: pos.y, element, charge };
     this.atoms.set(atom.id, atom);
     this.adjacency.set(atom.id, new Set());
     this.version++;
@@ -52,7 +61,7 @@ export class Molecule {
 
   addBond(a: number, b: number, order: BondOrder = 1, stereo: BondStereo = 'none'): Bond | null {
     if (a === b || !this.atoms.has(a) || !this.atoms.has(b) || this.bondBetween(a, b)) return null;
-    const bond: Bond = { id: this.nextId++, a, b, order, stereo };
+    const bond: Bond = { id: this.newId(), a, b, order, stereo };
     this.bonds.set(bond.id, bond);
     this.adjacency.get(a)!.add(bond.id);
     this.adjacency.get(b)!.add(bond.id);
@@ -90,6 +99,35 @@ export class Molecule {
     if (!bond) return;
     Object.assign(bond, patch);
     this.version++;
+  }
+
+  /** Add an atom with its id, or overwrite the atom that has it (keeping its bonds). */
+  putAtom(atom: Atom): void {
+    const existing = this.atoms.get(atom.id);
+    if (existing) Object.assign(existing, atom);
+    else {
+      this.atoms.set(atom.id, { ...atom });
+      this.adjacency.set(atom.id, new Set());
+      this.nextId = Math.max(this.nextId, atom.id + 1);
+    }
+    this.version++;
+  }
+
+  /**
+   * Add a bond with its id, or overwrite the bond that has it. Refused (false)
+   * if an end is missing or a different bond already joins the same atoms.
+   */
+  putBond(bond: Bond): boolean {
+    if (bond.a === bond.b || !this.atoms.has(bond.a) || !this.atoms.has(bond.b)) return false;
+    const twin = this.bondBetween(bond.a, bond.b);
+    if (twin && twin.id !== bond.id) return false;
+    this.removeBond(bond.id);
+    this.bonds.set(bond.id, { ...bond });
+    this.adjacency.get(bond.a)!.add(bond.id);
+    this.adjacency.get(bond.b)!.add(bond.id);
+    this.nextId = Math.max(this.nextId, bond.id + 1);
+    this.version++;
+    return true;
   }
 
   /** Swap a bond's ends; flips which end of a wedge is narrow. */

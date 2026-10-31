@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --ssr server/main.ts --outDir dist-server",
     "build:artifact": "vite build --mode artifact && node scripts/inline-artifact.mjs",
+    "start": "node dist-server/main.js",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -22,8 +23,16 @@
   },
   "homepage": "https://github.com/alexchimera/chemcanvas#readme",
   "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

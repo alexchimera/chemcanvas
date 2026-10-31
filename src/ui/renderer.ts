@@ -46,6 +46,8 @@ export interface Scene {
   marquee: { points: Vec[]; lasso: boolean } | null;
   /** Ripples where a press turned into a hold (screen px, t from 0 to 1). */
   pulses: { at: Vec; t: number }[];
+  /** Other people in a shared drawing: their pointers (screen px) and selections. */
+  peers: { name: string; color: string; cursor: Vec | null; selection: Highlight | null }[];
   now: number;
 }
 
@@ -109,6 +111,7 @@ export class Renderer {
       for (const id of scene.lifted) if (mol.atoms.has(id)) p.circle(mol.pos(id), 0.42, theme.accent);
     }
     p.alpha = 1;
+    for (const peer of scene.peers) if (peer.selection) this.drawHalo(view, mol, peer.selection, peer.color, 0.16);
     if (scene.selection) this.drawHalo(view, mol, scene.selection, theme.accent, 0.2);
 
     for (const t of scene.targets) p.circle(t, 0.3, null, theme.accent, 0.05);
@@ -138,7 +141,42 @@ export class Renderer {
     for (const stroke of scene.ink) {
       this.drawInk(stroke.points, stroke.tone === 'danger' ? theme.danger : theme.trail, stroke.alpha);
     }
+    for (const peer of scene.peers) if (peer.cursor) this.drawCursor(peer.cursor, peer.color, peer.name, theme);
     if (scene.pill) this.drawPill(scene.pill.text, scene.pill.at, scene.pill.tone === 'danger' ? theme.danger : theme.accent, theme);
+  }
+
+  /** Someone else's pointer: an arrow in their colour with their name beside it. */
+  private drawCursor(at: Vec, color: string, name: string, theme: Theme): void {
+    const { ctx, dpr } = this;
+    if (at.x < -40 || at.y < -40 || at.x > this.width + 40 || at.y > this.height + 40) return;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, at.x * dpr, at.y * dpr);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 15);
+    ctx.lineTo(4, 11.3);
+    ctx.lineTo(6.9, 17.4);
+    ctx.lineTo(9.4, 16.2);
+    ctx.lineTo(6.6, 10.3);
+    ctx.lineTo(11.6, 10);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.fill();
+    ctx.font = `600 11.5px ${theme.uiFont}`;
+    const w = ctx.measureText(name).width + 14;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(11, 15, w, 20, 10);
+    else ctx.rect(11, 15, w, 20);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 18, 25.5);
+    ctx.restore();
   }
 
   /** A flat highlighter band over atoms and bonds, drawn opaque on a layer and laid on translucent. */

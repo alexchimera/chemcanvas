@@ -1,7 +1,12 @@
-/** Snapshot-based undo/redo. States are plain data, so a snapshot is cheap. */
-export class History<T> {
-  private past: T[] = [];
-  private future: T[] = [];
+import { isEmptyPatch, type Patch } from './patch';
+
+/**
+ * Undo and redo as a stack of patches rather than snapshots, so in a shared
+ * drawing undo takes back only your own changes.
+ */
+export class History {
+  private past: Patch[] = [];
+  private future: Patch[] = [];
 
   constructor(private readonly limit = 200) {}
 
@@ -13,22 +18,29 @@ export class History<T> {
     return this.future.length > 0;
   }
 
-  /** Record the state from just before a change. */
-  record(state: T): void {
-    this.past.push(state);
+  record(patch: Patch): void {
+    if (isEmptyPatch(patch)) return;
+    this.past.push(patch);
     if (this.past.length > this.limit) this.past.shift();
     this.future = [];
   }
 
-  undo(current: T): T | undefined {
-    const prev = this.past.pop();
-    if (prev !== undefined) this.future.push(current);
-    return prev;
+  /** The patch to take back (apply it inverted), or null. */
+  undo(): Patch | null {
+    const patch = this.past.pop() ?? null;
+    if (patch) this.future.push(patch);
+    return patch;
   }
 
-  redo(current: T): T | undefined {
-    const next = this.future.pop();
-    if (next !== undefined) this.past.push(current);
-    return next;
+  /** The patch to apply again, or null. */
+  redo(): Patch | null {
+    const patch = this.future.pop() ?? null;
+    if (patch) this.past.push(patch);
+    return patch;
+  }
+
+  clear(): void {
+    this.past = [];
+    this.future = [];
   }
 }

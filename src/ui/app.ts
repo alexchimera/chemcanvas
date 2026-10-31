@@ -33,6 +33,7 @@ import {
   type Vec,
 } from '../core/geometry';
 import { History } from '../core/history';
+import { applyPatch, diffMolecules, invertPatch, isEmptyPatch } from '../core/patch';
 import { applyCleanup, cleanupLayout } from '../core/layout';
 import { Molecule, type MoleculeData } from '../core/molecule';
 import { nearestLatticePoint } from '../core/placement';
@@ -49,6 +50,8 @@ import {
   selectionBounds,
   type FlipAxis,
 } from '../core/selection';
+import { Collab, type CollabStatus } from '../collab/client';
+import { taggedIds, type PeerInfo } from '../collab/protocol';
 import { interpret, type StrokeMemory } from '../gestures/interpret';
 import { applyPlan, eraseClosure, MERGE_DISTANCE, nearestAtom, NONE, type Plan } from '../gestures/plan';
 import { aromatizePlan } from '../gestures/ring';
@@ -171,6 +174,9 @@ export interface AppHooks {
   onChange(readout: Readout): void;
   onHistory(canUndo: boolean, canRedo: boolean): void;
   onTool?(tool: Tool): void;
+  /** Who else is in the shared drawing (not including us), and how the connection is. */
+  onPeers?(peers: PeerInfo[]): void;
+  onRoomStatus?(status: CollabStatus): void;
   toast(message: string, action?: { label: string; run: () => void }): void;
   /** The part of the canvas not covered by floating panels, for framing the drawing. */
   freeArea?(): { x: number; y: number; width: number; height: number };
@@ -178,6 +184,8 @@ export interface AppHooks {
 
 const LONG_PRESS_MS = 420;
 const STORAGE_KEY = 'chemcanvas:v1:molecule';
+const roomKey = (code: string) => `chemcanvas:v1:room:${code}`;
+const EMPTY: MoleculeData = { atoms: [], bonds: [], nextId: 1 };
 const ATOM_KEYS: Record<string, string> = { c: 'C', n: 'N', o: 'O', s: 'S', p: 'P', f: 'F', l: 'Cl', b: 'Br', i: 'I', h: 'H' };
 const WHEEL_ELEMENTS = ['O', 'N', 'S', 'F', 'Cl', 'Br', 'I', 'P', 'H', 'C'];
 const A1 = { x: Math.sqrt(3), y: 0 };
@@ -197,7 +205,12 @@ export class ChemCanvasApp {
   readonly mol = new Molecule();
   /** Snap new structures onto the hex lattice. */
   snap = true;
-  private readonly history = new History<MoleculeData>();
+  private readonly history = new History();
+  /** The shared drawing this canvas is part of, if any. */
+  private collab: Collab | null = null;
+  private peers: PeerInfo[] = [];
+  /** Frame the drawing once the shared copy first arrives. */
+  private fitOnSync = false;
   private readonly view = new View();
   private readonly renderer: Renderer;
   private readonly wheel: Wheel;
@@ -210,6 +223,8 @@ export class ChemCanvasApp {
   private hover: Hit = { kind: 'none' };
   /** Last pointer position over the canvas (mouse and pen only), for paste and the menu key. */
   private pointer: Vec | null = null;
+  /** Our pointer as last shown to others (model space). */
+  private shared: Vec | null = null;
   private selected = new Set<number>();
   /** The last structure copied here, for when the system clipboard can't be read. */
   private clip: MoleculeData | null = null;
@@ -285,18 +300,24 @@ export class ChemCanvasApp {
   }
 
   undo(): void {
-    const prev = this.history.undo(this.mol.toJSON());
-    if (!prev) return;
-    this.closePopups();
-    this.mol.load(prev);
-    this.changed();
+    const patch = this.history.undo();
+    if (patch) this.replay(invertPatch(patch), 'undo');
   }
 
   redo(): void {
-    const next = this.history.redo(this.mol.toJSON());
-    if (!next) return;
+    const patch = this.history.redo();
+    if (patch) this.replay(patch, 'redo');
+  }
+
+  /**
+   * Undo or redo: apply a recorded patch, but only to things still as it
+   * left them, so other people's later changes in a shared drawing stand.
+   */
+  private replay(patch: Parameters<typeof applyPatch>[1], what: string): void {
     this.closePopups();
-    this.mol.load(next);
+    const applied = applyPatch(this.mol, patch, true);
+    if (isEmptyPatch(applied)) this.hooks.toast(`Someone else has changed that since, so there was nothing to ${what}`);
+    this.collab?.send(applied);
     this.changed();
   }
 
@@ -314,7 +335,7 @@ export class ChemCanvasApp {
     const from = new Map([...result.positions.keys()].map((id) => [id, this.mol.pos(id)]));
     this.closePopups();
     applyCleanup(this.mol, result);
-    this.history.record(before);
+    this.commit(before);
     this.changed();
     if (!reducedMotion()) this.morph = { from, to: result.positions, start: performance.now(), version: this.mol.version };
     this.hooks.toast(scope ? 'Molecule cleaned up' : 'Cleaned up', { label: 'Undo', run: () => this.undo() });
@@ -394,6 +415,88 @@ export class ChemCanvasApp {
     this.currentTool = tool;
     this.hooks.onTool?.(tool);
     this.updateCursor();
+  }
+
+  // ——— Shared drawings ———
+
+  get room(): string | null {
+    return this.collab?.room ?? null;
+  }
+
+  get roomStatus(): CollabStatus | null {
+    return this.collab?.status ?? null;
+  }
+
+  /** Us and everyone else in the shared drawing. */
+  get people(): PeerInfo[] {
+    const me = this.collab?.me;
+    return me ? [me, ...this.peers] : [];
+  }
+
+  /**
+   * Join a shared drawing. Starting one (`bring`) takes the drawing on screen
+   * into it; otherwise what we last saw of the room shows until the server's
+   * copy arrives.
+   */
+  joinRoom(code: string, opts: { name: string; endpoint: string; bring?: boolean }): void {
+    // Keep our own drawing to come back to.
+    if (this.collab) this.leaveRoom(false);
+    else this.persist();
+    this.cancelMode();
+    this.closePopups();
+    this.history.clear();
+    this.selected = new Set();
+    if (!opts.bring) this.mol.load(this.read(roomKey(code)) ?? EMPTY);
+    this.mol.idSource = taggedIds();
+    this.fitOnSync = !opts.bring;
+    this.collab = new Collab(
+      code,
+      this.mol,
+      {
+        onRemoteChange: () => {
+          this.changed();
+          if (this.fitOnSync) {
+            this.fitOnSync = false;
+            this.fit();
+          }
+        },
+        onPeers: (peers) => {
+          this.peers = peers;
+          this.hooks.onPeers?.(peers);
+          this.invalidate();
+        },
+        onStatus: (status) => this.hooks.onRoomStatus?.(status),
+        onReject: (reason) => this.hooks.toast(reason),
+        canRebuild: () => this.mode.kind === 'idle',
+        onJoin: (peer) => this.hooks.toast(`${peer.name} joined`),
+        onLeave: (peer) => this.hooks.toast(`${peer.name} left`),
+      },
+      opts.name,
+      opts.endpoint,
+    );
+    this.changed();
+    if (!opts.bring) this.fit();
+  }
+
+  /** Leave the shared drawing and go back to our own. */
+  leaveRoom(restore = true): void {
+    if (!this.collab) return;
+    this.collab.leave();
+    this.collab = null;
+    this.peers = [];
+    this.mol.idSource = null;
+    this.history.clear();
+    this.selected = new Set();
+    this.hooks.onPeers?.([]);
+    if (!restore) return;
+    this.mol.load(this.read(STORAGE_KEY) ?? EMPTY);
+    this.changed();
+    this.fit();
+  }
+
+  /** Change the name others see on our pointer. */
+  rename(name: string): void {
+    this.collab?.rename(name);
   }
 
   // ——— Selection ———
@@ -563,6 +666,7 @@ export class ChemCanvasApp {
     c.addEventListener('pointercancel', this.onPointerCancel);
     c.addEventListener('pointerleave', () => {
       this.pointer = null;
+      this.sharePointer(null);
       if (this.mode.kind === 'idle' && this.hover.kind !== 'none') {
         this.hover = { kind: 'none' };
         this.invalidate();
@@ -686,6 +790,7 @@ export class ChemCanvasApp {
   private onPointerMove = (e: PointerEvent): void => {
     const at = this.local(e);
     if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) this.touches.set(e.pointerId, at);
+    if (e.isPrimary) this.sharePointer(at);
     const m = this.mode;
     switch (m.kind) {
       case 'idle':
@@ -817,6 +922,7 @@ export class ChemCanvasApp {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && e.isPrimary) this.sharePointer(null);
     if (this.swallowed.delete(e.pointerId)) return;
     if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
     const m = this.mode;
@@ -867,7 +973,7 @@ export class ChemCanvasApp {
         this.mode = { kind: 'idle' };
         const changed = m.kind === 'move-selection' ? m.moved : Math.abs(m.angle) > 1e-9;
         if (changed) {
-          this.history.record(m.before);
+          this.commit(m.before);
           this.changed();
         }
         this.updateCursor();
@@ -881,7 +987,7 @@ export class ChemCanvasApp {
           this.openMenu({ kind: 'atom', id: m.atom }, m.start, m.pointerType);
         } else {
           if (m.target !== null) this.mol.mergeAtom(m.atom, m.target);
-          this.history.record(m.before);
+          this.commit(m.before);
           this.changed();
         }
         this.updateCursor();
@@ -892,7 +998,7 @@ export class ChemCanvasApp {
         this.mode = { kind: 'idle' };
         if (!m.moved) this.openMenu({ kind: 'bond', id: m.bond }, m.start, m.pointerType);
         else {
-          this.history.record(m.before);
+          this.commit(m.before);
           this.changed();
         }
         this.updateCursor();
@@ -1209,6 +1315,12 @@ export class ChemCanvasApp {
     return ids;
   }
 
+  private sharePointer(at: Vec | null): void {
+    if (!this.collab) return;
+    this.shared = at && this.view.toModel(at);
+    this.collab.presence(this.shared, this.selected);
+  }
+
   /** Zoom out to show these atoms if any are off screen. */
   private reveal(ids: number[]): void {
     const box = selectionBounds(this.mol, ids);
@@ -1217,6 +1329,7 @@ export class ChemCanvasApp {
   }
 
   private selectionChanged(): void {
+    this.collab?.presence(this.shared, this.selected);
     this.hooks.onChange(this.readout());
     this.refreshAnalysis();
     this.invalidate();
@@ -1346,7 +1459,7 @@ export class ChemCanvasApp {
     const version = this.mol.version;
     mutate();
     if (this.mol.version === version) return;
-    this.history.record(before);
+    this.commit(before);
     this.glow([], glowBonds);
     this.changed();
   }
@@ -1358,9 +1471,16 @@ export class ChemCanvasApp {
     if (plan.kind === 'erase') this.fadeOut(eraseClosure(this.mol, plan.atoms, plan.bonds));
     const applied = applyPlan(this.mol, plan);
     if (this.mol.version === version) return;
-    this.history.record(before);
+    this.commit(before);
     this.glow(applied.atoms, applied.bonds);
     this.changed();
+  }
+
+  /** Record what changed since `before` as one undoable step, and share it. */
+  private commit(before: MoleculeData): void {
+    const patch = diffMolecules(before, this.mol.toJSON());
+    this.history.record(patch);
+    this.collab?.send(patch);
   }
 
   private glow(atoms: number[], bonds: number[]): void {
@@ -1605,6 +1725,8 @@ export class ChemCanvasApp {
 
   private draw = (now: number): void => {
     this.frame = 0;
+    // Other people's changes wait while a gesture is under way.
+    if (this.mode.kind === 'idle') this.collab?.settle();
     this.renderer.render(this.scene(now), this.view, this.theme);
     this.placeBar();
     if (this.effects.length || this.fading || this.morph || this.pulses.length) this.invalidate();
@@ -1640,6 +1762,7 @@ export class ChemCanvasApp {
       frame: null,
       marquee: null,
       pulses: [],
+      peers: [],
       now,
     };
     const m = this.mode;
@@ -1699,6 +1822,16 @@ export class ChemCanvasApp {
       }
     }
     if (m.kind === 'marquee') scene.marquee = { points: marqueeOutline(m), lasso: m.lasso };
+    for (const peer of this.peers) {
+      const atoms = new Set(peer.selection.filter((id) => scene.mol.atoms.has(id)));
+      const bonds = new Set([...scene.mol.bonds.values()].filter((b) => atoms.has(b.a) && atoms.has(b.b)).map((b) => b.id));
+      scene.peers.push({
+        name: peer.name,
+        color: peer.color,
+        cursor: peer.cursor && this.view.toScreen({ x: peer.cursor[0], y: peer.cursor[1] }),
+        selection: atoms.size ? { atoms, bonds } : null,
+      });
+    }
     if (m.kind === 'rotate-selection') {
       const degrees = Math.round((m.angle * 180) / Math.PI);
       scene.pill = { text: `${degrees}°`, at: m.at, tone: 'accent' };
@@ -1715,22 +1848,26 @@ export class ChemCanvasApp {
 
   private persist(): void {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.mol.toJSON()));
+      // A shared drawing is kept too, so it can be shown at once next time and
+      // can refill the room if the server ever loses it.
+      localStorage.setItem(this.collab ? roomKey(this.collab.room) : STORAGE_KEY, JSON.stringify(this.mol.toJSON()));
     } catch {
       // Storage can be unavailable (private mode, sandboxed previews); drawing still works.
     }
   }
 
   private restore(): boolean {
+    const data = this.read(STORAGE_KEY);
+    if (data) this.mol.load(data);
+    return data !== null;
+  }
+
+  private read(key: string): MoleculeData | null {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      const data = JSON.parse(raw) as MoleculeData;
-      if (!Array.isArray(data.atoms) || !Array.isArray(data.bonds)) return false;
-      this.mol.load(data);
-      return true;
+      const data = JSON.parse(localStorage.getItem(key) ?? 'null') as MoleculeData | null;
+      return data && Array.isArray(data.atoms) && Array.isArray(data.bonds) ? data : null;
     } catch {
-      return false;
+      return null;
     }
   }
 }

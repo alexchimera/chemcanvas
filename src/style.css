@@ -285,6 +285,228 @@ button {
   color: var(--muted);
 }
 
+/* ——— Draw together ——— */
+
+.tool {
+  position: relative;
+}
+
+.share-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 2px solid var(--surface);
+  border-radius: 8px;
+  background: var(--muted);
+  color: #fff;
+  font: 700 9.5px/12px var(--font-ui);
+  text-align: center;
+}
+
+.share-badge[data-status="live"] {
+  background: #2f9e44;
+}
+
+.share-badge[data-status="connecting"] {
+  background: #e8a10c;
+}
+
+.share {
+  position: absolute;
+  z-index: 6;
+  top: 64px;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 12px;
+  width: 316px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.share > div {
+  display: grid;
+  gap: 10px;
+}
+
+.share h2 {
+  margin: 0;
+  font: 700 16px/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.share p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.share button {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.share button:hover {
+  background: var(--surface-sunk);
+}
+
+.share button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+}
+
+.share button.primary:hover {
+  filter: brightness(1.08);
+}
+
+.share button.quiet {
+  justify-self: start;
+  height: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.share input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  color: var(--ink);
+  font: 13px var(--font-ui);
+}
+
+.share input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.share-or {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.share-or::before,
+.share-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.share-join,
+.share-link {
+  display: flex;
+  gap: 6px;
+}
+
+.share-join input,
+.share-link input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.share-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.share-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.share-status[data-status="live"]::before {
+  background: #2f9e44;
+}
+
+.share-status[data-status="connecting"]::before {
+  background: #e8a10c;
+}
+
+.share-code b {
+  color: var(--ink);
+  font: 600 15px var(--font-mono);
+  letter-spacing: 0.12em;
+}
+
+.share-people {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.share-people li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+.share-people .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.share-people .you {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.share-name {
+  display: grid;
+  gap: 5px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ——— Gesture guide ——— */
 
 .guide {
@@ -1119,10 +1341,18 @@ kbd {
   .toast {
     bottom: 112px;
   }
-  .card {
+  .card,
+  .share {
     top: 64px;
     left: max(16px, env(safe-area-inset-left, 0px));
     width: auto;
+  }
+}
+
+@media (max-width: 440px) {
+  /* Clearing the canvas is in the canvas menu (hold empty paper). */
+  #clear {
+    display: none;
   }
 }
 

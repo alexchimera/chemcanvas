@@ -34,5 +34,6 @@ export const ICONS = {
   selectAll: icon('<rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke-dasharray="3 2.6"/><path d="M8 12.5l2.8 2.8L16.5 9"/>'),
   deselect: icon('<rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke-dasharray="3 2.6"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>'),
   swap: icon('<path d="M4 8h14.5M15 4.5 18.5 8 15 11.5"/><path d="M20 16H5.5M9 12.5 5.5 16 9 19.5"/>'),
+  users: icon('<circle cx="9" cy="8.2" r="3.3"/><path d="M3.2 19.6c.7-3.5 3-5.4 5.8-5.4s5.1 1.9 5.8 5.4"/><path d="M15.4 5a3.3 3.3 0 0 1 0 6.4M17.5 14.6c1.8.7 2.9 2.4 3.3 5"/>'),
   atom: icon('<circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 3.5v4M12 16.5v4M4.6 7.75l3.5 2M15.9 14.25l3.5 2M4.6 16.25l3.5-2M15.9 9.75l3.5-2"/>'),
 };
