@@ -1,5 +1,5 @@
 import { meanPoint, pointInPolygon, type Vec } from './geometry';
-import type { Molecule } from './molecule';
+import type { Bond, Molecule } from './molecule';
 
 export interface Ring {
   /** Atom ids in order around the ring. */
@@ -20,26 +20,90 @@ export function findRings(mol: Molecule): Ring[] {
 }
 
 /**
- * Horton's candidate cycles (for every root atom and every non-tree bond of
- * its BFS tree) sorted by size, then a greedy GF(2) elimination keeps the
- * first `E − V + C` independent ones: a minimum cycle basis.
+ * Rings never cross a bridge (a bond whose removal disconnects the graph), so
+ * the molecule is cut at its bridges and each ring block is searched alone.
  */
 function computeRings(mol: Molecule): Ring[] {
-  const bonds = [...mol.bonds.values()];
-  const cyclomatic = bonds.length - mol.atoms.size + mol.components().length;
+  const cut = bridges(mol);
+  const seen = new Set<number>();
+  const rings: Ring[] = [];
+  for (const start of mol.atoms.keys()) {
+    if (seen.has(start)) continue;
+    const atoms = [start];
+    seen.add(start);
+    const bonds = new Map<number, Bond>();
+    for (let i = 0; i < atoms.length; i++) {
+      for (const b of mol.bondsOf(atoms[i])) {
+        if (cut.has(b.id)) continue;
+        bonds.set(b.id, b);
+        const w = b.a === atoms[i] ? b.b : b.a;
+        if (!seen.has(w)) {
+          seen.add(w);
+          atoms.push(w);
+        }
+      }
+    }
+    if (bonds.size >= atoms.length) rings.push(...blockRings(mol, atoms, [...bonds.values()]));
+  }
+  return rings;
+}
+
+/** Bonds whose removal would split their molecule (Tarjan, iterative). */
+function bridges(mol: Molecule): Set<number> {
+  const disc = new Map<number, number>();
+  const low = new Map<number, number>();
+  const out = new Set<number>();
+  let time = 0;
+  for (const root of mol.atoms.keys()) {
+    if (disc.has(root)) continue;
+    disc.set(root, time);
+    low.set(root, time++);
+    const stack = [{ v: root, via: -1, bonds: mol.bondsOf(root), i: 0 }];
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      if (top.i < top.bonds.length) {
+        const b = top.bonds[top.i++];
+        if (b.id === top.via) continue;
+        const w = b.a === top.v ? b.b : b.a;
+        if (!disc.has(w)) {
+          disc.set(w, time);
+          low.set(w, time++);
+          stack.push({ v: w, via: b.id, bonds: mol.bondsOf(w), i: 0 });
+        } else low.set(top.v, Math.min(low.get(top.v)!, disc.get(w)!));
+        continue;
+      }
+      stack.pop();
+      const parent = stack[stack.length - 1];
+      if (!parent) continue;
+      low.set(parent.v, Math.min(low.get(parent.v)!, low.get(top.v)!));
+      if (low.get(top.v)! > disc.get(parent.v)!) out.add(top.via);
+    }
+  }
+  return out;
+}
+
+/**
+ * Horton's candidate cycles (for every root atom and every non-tree bond of
+ * its BFS tree) sorted by size, then a greedy GF(2) elimination keeps the
+ * first `E − V + 1` independent ones: a minimum cycle basis of the block.
+ */
+function blockRings(mol: Molecule, blockAtoms: number[], bonds: Bond[]): Ring[] {
+  const cyclomatic = bonds.length - blockAtoms.length + 1;
   if (cyclomatic <= 0) return [];
+  const inBlock = new Set(bonds.map((b) => b.id));
 
   const index = new Map(bonds.map((b, i) => [b.id, i]));
   const words = Math.ceil(bonds.length / 32);
   const seen = new Set<string>();
   const candidates: { bits: Uint32Array; bonds: number[] }[] = [];
 
-  for (const root of mol.atoms.keys()) {
+  for (const root of blockAtoms) {
     const parentBond = new Map<number, number | null>([[root, null]]);
     const queue = [root];
     for (let i = 0; i < queue.length; i++) {
       const u = queue[i];
       for (const bond of mol.bondsOf(u)) {
+        if (!inBlock.has(bond.id)) continue;
         const w = bond.a === u ? bond.b : bond.a;
         if (!parentBond.has(w)) {
           parentBond.set(w, bond.id);

@@ -7,6 +7,7 @@ import { Molecule, type BondOrder } from './core/molecule';
  */
 export function aspirin(): Molecule {
   const mol = new Molecule();
+  const h = Math.sqrt(3) / 2;
   const ring = Array.from({ length: 6 }, (_, k) => polar(-Math.PI / 2 + (k * Math.PI) / 3, 1));
   const at = (p: Vec, element = 'C') => mol.addAtom(p, element).id;
   const r = ring.map((p) => at(p));
@@ -16,15 +17,15 @@ export function aspirin(): Molecule {
   // Carboxylic acid on the top carbon.
   const acid = at({ x: 0, y: -2 });
   mol.addBond(r[0], acid);
-  mol.addBond(acid, at({ x: -0.866, y: -2.5 }, 'O'), 2);
-  mol.addBond(acid, at({ x: 0.866, y: -2.5 }, 'O'));
+  mol.addBond(acid, at({ x: -h, y: -2.5 }, 'O'), 2);
+  mol.addBond(acid, at({ x: h, y: -2.5 }, 'O'));
 
   // Acetoxy group on the upper-right carbon.
-  const ester = at({ x: 1.732, y: -1 }, 'O');
+  const ester = at({ x: 2 * h, y: -1 }, 'O');
   mol.addBond(r[1], ester);
-  const carbonyl = at({ x: 2.598, y: -0.5 });
+  const carbonyl = at({ x: 3 * h, y: -0.5 });
   mol.addBond(ester, carbonyl);
-  mol.addBond(carbonyl, at({ x: 2.598, y: 0.5 }, 'O'), 2);
-  mol.addBond(carbonyl, at({ x: 3.464, y: -1 }));
+  mol.addBond(carbonyl, at({ x: 3 * h, y: 0.5 }, 'O'), 2);
+  mol.addBond(carbonyl, at({ x: 4 * h, y: -1 }));
   return mol;
 }

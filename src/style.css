@@ -193,6 +193,7 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: auto;
   padding: 4px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -758,6 +759,12 @@ kbd {
   }
   .toast {
     bottom: 112px;
+  }
+}
+
+@media (max-width: 440px) {
+  .brand {
+    display: none;
   }
 }
 

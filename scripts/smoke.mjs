@@ -77,6 +77,24 @@ const browser = await chromium.launch();
   await page.click('.wheel-item[aria-label="Change to N"]');
   check('the element wheel sets nitrogen', (await smiles()).includes('N'), await smiles());
 
+  // Knock an atom out of place by holding and dragging it, then tidy with the wand.
+  const victim = await page.evaluate(() => window.chemcanvas.view.toScreen([...window.chemcanvas.mol.atoms.values()][3]));
+  await page.mouse.move(victim.x, victim.y);
+  await page.mouse.down();
+  await page.waitForTimeout(550);
+  await page.mouse.move(victim.x + 40, victim.y + 35, { steps: 6 });
+  await page.mouse.up();
+  const bondSpread = () =>
+    page.evaluate(() => {
+      const m = window.chemcanvas.mol;
+      const l = [...m.bonds.values()].map((b) => Math.hypot(m.atoms.get(b.a).x - m.atoms.get(b.b).x, m.atoms.get(b.a).y - m.atoms.get(b.b).y));
+      return Math.max(...l) - Math.min(...l);
+    });
+  const distorted = await bondSpread();
+  await page.click('#tidy');
+  await page.waitForTimeout(500);
+  check('the wand straightens a distorted molecule', distorted > 0.1 && (await bondSpread()) < 1e-6, `bond length spread ${distorted.toFixed(2)} → ${(await bondSpread()).toExponential(1)}`);
+
   const svgOk = await page.evaluate(() => {
     const doc = new DOMParser().parseFromString(window.chemcanvas.svg(), 'image/svg+xml');
     return !doc.querySelector('parsererror');

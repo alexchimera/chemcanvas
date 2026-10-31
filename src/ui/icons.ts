@@ -11,6 +11,7 @@ export const ICONS = {
   share: icon('<path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'),
   guide: icon('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4"/><path d="M12 17.2h.01" stroke-width="2.4"/>'),
   moon: icon('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
+  tidy: icon('<path d="m4 20 11-11"/><path d="m13.5 7.5 3 3"/><path d="M18.5 3v3.5M16.75 4.75h3.5M20 10.5v2.5M18.75 11.75h2.5M9.5 3v2.5M8.25 4.25h2.5"/>'),
   copy: icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>'),
   close: icon('<path d="M6 6l12 12M18 6 6 18"/>'),
   single: icon('<path d="M5 19 19 5"/>'),

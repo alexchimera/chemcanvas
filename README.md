@@ -21,6 +21,7 @@ Works with a mouse, trackpad, pen or finger. No dependencies at runtime.
 | **Tap an atom** | Element wheel: O, N, S, F, Cl, Br, I, P, H, C, charges, delete, or type any symbol. |
 | **Scribble** | Erases whatever it covers (stranded atoms go too). |
 | **Hold, then drag** | Moves an atom (it snaps around its neighbour in 15° steps and merges if dropped on another atom). Hold a bond to move the whole molecule. |
+| **Hold a bond, then shake** | Cleans up that molecule (see [Cleaning up](#cleaning-up)). |
 | **Double-tap empty paper** | Adds a single atom. |
 | **Pinch / two-finger drag** | Zoom and pan. |
 | **Two-finger tap** / three-finger tap | Undo / redo. |
@@ -39,7 +40,31 @@ With a stylus, a single finger pans instead of drawing, so a resting palm does n
 | `Ctrl/⌘ Z`, `Ctrl/⌘ Shift Z` (or `Ctrl Y`) | Undo, redo |
 | Trackpad scroll, `Space`-drag, middle- or right-drag | Pan |
 | Mouse wheel, `Ctrl`-scroll, pinch | Zoom |
+| `T` | Clean up the molecule under the pointer, or everything |
+| `Ctrl/⌘ Shift K` | Clean up everything |
 | `0` | Fit the drawing to the screen |
+
+## Cleaning up
+
+When a structure has drifted (atoms dragged about, molecules joined at odd
+angles, a Molfile with its own ideas about geometry), the wand button redraws
+everything with ideal geometry and the atoms glide into place. `T`, the bond
+wheel's wand, or holding a bond and shaking it does the same for one molecule.
+Undo puts it all back.
+
+Clean-up gives unit bonds, regular rings (fused, spiro and peri-fused systems
+included), 120° zig-zags, straight alkynes and allenes, and crosses for
+quaternary carbons. Bridged systems get their usual drawings: norbornane with
+its bridge inside the hexagon, bicyclo[2.2.2]octane with its bridge across the
+middle. It keeps what the drawing says:
+
+- substituents stay on the side of the ring or chain they were drawn on;
+- cis double bonds stay cis and trans stay trans;
+- wedged and hashed stereocentres keep their configuration, even when a branch
+  has to be mirrored to stop it overlapping another (its wedges are swapped);
+- the molecule stays where it was and roughly the way round it was, squared
+  onto the 30° grid and the hex lattice, and is moved off any molecule it
+  would now overlap.
 
 ## Output
 
@@ -73,7 +98,7 @@ toggle, for embedding in a host page that controls those.
 
 ```
 src/
-  core/        molecule graph, valence and implicit H, rings (SSSR), placement geometry, edits, history
+  core/        molecule graph, valence and implicit H, rings (SSSR), placement geometry, clean-up layout, edits, history
   gestures/    stroke analysis, chain walker, ring placement, erase, and the plans they produce
   io/          SMILES writer, Molfile reader/writer
   render/      depiction (ACS-style), canvas and SVG painters, export
@@ -94,6 +119,14 @@ src/
   even with overshoot or a lead-in tail; corners are counted from the turning
   profile to pick the ring size; the ring is then fused onto a bond, grown
   through an atom, hung off a nearby atom, or placed on its own.
+- **Clean-up** (`core/layout.ts`): ring systems are built from regular
+  polygons (bending the leftover atoms of a ring that can't be regular round
+  an arc of unit bonds) and placed as rigid units; everything else grows out
+  from the largest ring system along the tree of acyclic bonds, each bond
+  taking the ideal direction nearest the drawn one without reordering
+  substituents around any atom. Overlaps are then removed by mirroring
+  branches across single bonds, and the result is fitted back onto the drawing
+  by least-squares rotation.
 - **Hex paper.** The background is a honeycomb lattice with unit-length edges.
   Chains started on empty paper and upright benzene rings snap onto it, so
   separately drawn structures line up.
@@ -104,5 +137,5 @@ src/
 ## Limitations
 
 - SMILES output is Kekulé and non-canonical, and does not encode wedge/hash stereochemistry yet.
-- SMILES import is not supported (it needs 2D coordinate generation); Molfiles can be imported.
+- SMILES import is not supported yet; Molfiles can be imported.
 - No reaction arrows, text annotations or multi-select yet.

@@ -132,6 +132,7 @@ const app = new ChemCanvasApp(appEl, $<HTMLCanvasElement>('#board'), {
 undoBtn.addEventListener('click', () => app.undo());
 redoBtn.addEventListener('click', () => app.redo());
 $('#fit').addEventListener('click', () => app.fit());
+$('#tidy').addEventListener('click', () => app.cleanup());
 $('#clear').addEventListener('click', () => app.clear());
 
 async function copyText(text: string): Promise<boolean> {

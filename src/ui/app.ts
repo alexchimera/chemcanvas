@@ -11,8 +11,9 @@ import {
   type BondStyle,
 } from '../core/edits';
 import { normalizeSymbol } from '../core/elements';
-import { add, angleOf, boundsOf, clamp, closestOnSegment, deg, dist, midpoint, polar, sub, type Vec } from '../core/geometry';
+import { add, angleDiff, angleOf, boundsOf, clamp, closestOnSegment, deg, dist, lerp, midpoint, polar, sub, type Vec } from '../core/geometry';
 import { History } from '../core/history';
+import { applyCleanup, cleanupLayout } from '../core/layout';
 import { Molecule, type MoleculeData } from '../core/molecule';
 import { nearestLatticePoint } from '../core/placement';
 import { ringAt } from '../core/rings';
@@ -45,7 +46,18 @@ type Mode =
   | { kind: 'pending'; pointerId: number; pointerType: string; start: Vec; points: InkPoint[]; hit: Hit; timer: number }
   | DrawState
   | { kind: 'move-atom'; pointerId: number; atom: number; offset: Vec; start: Vec; moved: boolean; before: MoleculeData; target: number | null }
-  | { kind: 'move-fragment'; pointerId: number; atoms: number[]; bond: number; last: Vec; start: Vec; moved: boolean; before: MoleculeData }
+  | {
+      kind: 'move-fragment';
+      pointerId: number;
+      atoms: number[];
+      bond: number;
+      last: Vec;
+      start: Vec;
+      moved: boolean;
+      before: MoleculeData;
+      /** Recent pointer positions, to notice a shake. */
+      trail: { x: number; y: number; t: number }[];
+    }
   | { kind: 'pan'; pointerId: number; last: Vec }
   | {
       kind: 'pinch';
@@ -102,6 +114,8 @@ export class ChemCanvasApp {
   private lastTap: { time: number; at: Vec } | null = null;
   /** What the open wheel edits, highlighted on the canvas (the wheel may sit off to one side). */
   private wheelTarget: Hit = { kind: 'none' };
+  /** Atoms gliding from their old positions after a clean-up. */
+  private morph: { from: Map<number, Vec>; to: Map<number, Vec>; start: number; version: number } | null = null;
 
   constructor(
     root: HTMLElement,
@@ -143,6 +157,26 @@ export class ChemCanvasApp {
     this.wheel.close();
     this.mol.load(next);
     this.changed();
+  }
+
+  /**
+   * Redraw molecules with ideal geometry (all of them, or the ones containing
+   * `scope`), letting the atoms glide into their new places.
+   */
+  cleanup(scope?: number[], before: MoleculeData = this.mol.toJSON()): void {
+    if (this.mol.isEmpty) return;
+    const result = cleanupLayout(this.mol, scope, { lattice: this.snap });
+    if (result.maxShift < 0.005 && result.stereo.size === 0) {
+      this.hooks.toast(scope ? 'This molecule is already tidy' : 'Everything is already tidy');
+      return;
+    }
+    const from = new Map([...result.positions.keys()].map((id) => [id, this.mol.pos(id)]));
+    this.wheel.close();
+    applyCleanup(this.mol, result);
+    this.history.record(before);
+    this.changed();
+    if (!reducedMotion()) this.morph = { from, to: result.positions, start: performance.now(), version: this.mol.version };
+    this.hooks.toast(scope ? 'Molecule cleaned up' : 'Cleaned up', { label: 'Undo', run: () => this.undo() });
   }
 
   clear(): void {
@@ -385,6 +419,21 @@ export class ChemCanvasApp {
       }
       case 'move-fragment': {
         if (e.pointerId !== m.pointerId) return;
+        m.trail.push({ ...at, t: performance.now() });
+        if (isShake(m.trail, performance.now())) {
+          // Shaken, not moved: put it back and tidy it instead.
+          this.mol.load(m.before);
+          this.mode = { kind: 'idle' };
+          this.swallowed.add(m.pointerId);
+          try {
+            navigator.vibrate?.([12, 40, 12]);
+          } catch {
+            // Vibration is optional.
+          }
+          this.cleanup(m.atoms, m.before);
+          this.updateCursor();
+          return;
+        }
         if (!m.moved && dist(at, m.start) < slop(e.pointerType)) return;
         m.moved = true;
         const model = this.view.toModel(at);
@@ -503,6 +552,7 @@ export class ChemCanvasApp {
         start: m.start,
         moved: false,
         before: this.mol.toJSON(),
+        trail: [],
       };
     } else {
       this.mode = { kind: 'pan', pointerId, last: m.start };
@@ -746,6 +796,7 @@ export class ChemCanvasApp {
       ['wavy', 'Wavy (unknown stereo)'],
     ];
     const items: WheelItem[] = styles.map(([key, title]) => ({ key, title, icon: ICONS[key] }));
+    items.push({ key: 'tidy', title: 'Clean up this molecule', icon: ICONS.tidy });
     items.push({ key: 'delete', title: 'Delete bond', icon: ICONS.trash, className: 'danger' });
     this.wheel.open(
       this.view.toScreen(midpoint(this.mol.pos(bond.a), this.mol.pos(bond.b))),
@@ -754,7 +805,8 @@ export class ChemCanvasApp {
         centerClass: 'bond-hub',
         items,
         onPick: (key) => {
-          if (key === 'delete') this.edit(() => deleteBond(this.mol, id));
+          if (key === 'tidy') this.cleanup(this.mol.fragmentOf(bond.a));
+          else if (key === 'delete') this.edit(() => deleteBond(this.mol, id));
           else this.edit(() => setBondStyle(this.mol, id, key as BondStyle), [id]);
         },
       },
@@ -783,6 +835,11 @@ export class ChemCanvasApp {
       this.redo();
       return;
     }
+    if (mod && e.shiftKey && key === 'k') {
+      e.preventDefault();
+      this.cleanup();
+      return;
+    }
     if (mod || e.altKey) return;
     if (e.key === ' ' && (e.target === document.body || e.target === this.canvas)) {
       e.preventDefault();
@@ -795,6 +852,13 @@ export class ChemCanvasApp {
       return;
     }
     const target = this.hover;
+    if (key === 't') {
+      // Tidy the molecule under the pointer, or everything.
+      const anchor = target.kind === 'atom' ? target.id : target.kind === 'bond' ? this.mol.bonds.get(target.id)?.a : undefined;
+      this.cleanup(anchor !== undefined ? this.mol.fragmentOf(anchor) : undefined);
+      e.preventDefault();
+      return;
+    }
     if (target.kind === 'atom') {
       const id = target.id;
       if (ATOM_KEYS[key]) this.edit(() => setElement(this.mol, id, ATOM_KEYS[key]));
@@ -849,7 +913,7 @@ export class ChemCanvasApp {
   private draw = (now: number): void => {
     this.frame = 0;
     this.renderer.render(this.scene(now), this.view, this.theme);
-    if (this.effects.length || this.fading) this.invalidate();
+    if (this.effects.length || this.fading || this.morph) this.invalidate();
   };
 
   private scene(now: number): Scene {
@@ -867,6 +931,19 @@ export class ChemCanvasApp {
       now,
     };
     const m = this.mode;
+    if (this.morph) {
+      const t = (now - this.morph.start) / 380;
+      if (t >= 1 || this.mol.version !== this.morph.version || m.kind !== 'idle') this.morph = null;
+      else {
+        const k = 1 - (1 - t) ** 3;
+        const shown = this.mol.clone();
+        for (const [id, to] of this.morph.to) {
+          const from = this.morph.from.get(id);
+          if (from && shown.atoms.has(id)) shown.updateAtom(id, lerp(from, to, k));
+        }
+        scene.mol = shown;
+      }
+    }
     if (m.kind === 'draw') {
       const plan = this.planFor(m);
       if (plan.kind === 'build' || plan.kind === 'bond-orders') {
@@ -928,6 +1005,21 @@ export class ChemCanvasApp {
       return false;
     }
   }
+}
+
+/** A quick back-and-forth: three or more sharp reversals within the last 0.7 s. */
+function isShake(trail: { x: number; y: number; t: number }[], now: number): boolean {
+  const pts: Vec[] = [];
+  for (const p of trail) {
+    if (now - p.t > 700) continue;
+    if (!pts.length || dist(p, pts[pts.length - 1]) >= 12) pts.push(p);
+  }
+  let reversals = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const turn = Math.abs(angleDiff(angleOf(sub(pts[i + 1], pts[i])), angleOf(sub(pts[i], pts[i - 1]))));
+    if (turn > deg(120)) reversals++;
+  }
+  return reversals >= 3;
 }
 
 function isEditable(target: EventTarget | null): boolean {
