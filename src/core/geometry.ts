@@ -37,6 +37,15 @@ export const polar = (theta: number, r = 1): Vec => ({ x: Math.cos(theta) * r, y
 export const deg = (degrees: number): number => (degrees * Math.PI) / 180;
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
+/** Rotate `p` about `c`; positive angles turn clockwise on the y-down screen. */
+export function rotateAbout(p: Vec, c: Vec, theta: number): Vec {
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const x = p.x - c.x;
+  const y = p.y - c.y;
+  return { x: c.x + x * cos - y * sin, y: c.y + x * sin + y * cos };
+}
+
 export function normalize(a: Vec): Vec {
   const l = Math.hypot(a.x, a.y);
   return l > 1e-12 ? { x: a.x / l, y: a.y / l } : { x: 0, y: 0 };

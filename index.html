@@ -23,6 +23,8 @@
           <span>ChemCanvas</span>
         </div>
         <nav class="toolbar" aria-label="Canvas actions">
+          <button class="tool" id="select" data-icon="select" aria-label="Select tool" aria-pressed="false" title="Select tool (V): drag to select, drag a selection to move it"></button>
+          <span class="sep" aria-hidden="true"></span>
           <button class="tool" id="undo" data-icon="undo" aria-label="Undo" title="Undo (Ctrl/⌘ Z, or two-finger tap)" disabled></button>
           <button class="tool" id="redo" data-icon="redo" aria-label="Redo" title="Redo (Ctrl/⌘ Shift Z, or three-finger tap)" disabled></button>
           <span class="sep" aria-hidden="true"></span>
@@ -84,7 +86,7 @@
               <circle class="dot" cx="36" cy="24" r="3.2" />
               <circle class="ring" cx="36" cy="24" r="8.5" />
             </svg>
-            <div><b>Tap a bond</b><span>Single, double, triple. Hold, then let go, for wedges and hashes.</span></div>
+            <div><b>Tap a bond</b><span>Single, double, triple. Hold and let go for wedges, hashes and more.</span></div>
           </li>
           <li>
             <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
@@ -116,6 +118,24 @@
           </li>
           <li>
             <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <path class="bond" d="M20 30l8-4.6 8 4.6 8-4.6" />
+              <path class="sel" d="M14 15.5h44v20H14z" />
+              <circle class="ring" cx="14" cy="15.5" r="5.5" />
+              <path class="ink" d="M14 15.5 58 35.5" />
+            </svg>
+            <div><b>Hold empty paper, then drag</b><span>Selects with a box, or a lasso if you curve round. Drag a selection to move it, or its handle to turn it.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
+              <circle class="dot" cx="22" cy="24" r="3.2" />
+              <circle class="ring" cx="22" cy="24" r="8.5" />
+              <rect class="panel" x="34" y="9" width="28" height="30" rx="3" />
+              <path class="bond thin" d="M39 16h18M39 24h18M39 32h12" />
+            </svg>
+            <div><b>Hold and let go</b><span>A menu for the atom, bond or selection under your finger, or the canvas. Right-click does the same.</span></div>
+          </li>
+          <li>
+            <svg class="g" viewBox="0 0 72 48" aria-hidden="true">
               <path class="bond" d="M29 12.5l10.5 5.5 0.5 11.5-9.5 6.5-10-5 -0.5-12z" />
               <path class="ink" d="M49 17c3 4 3 10 0 14M55.5 13.5c5 6 5 15 0 21" />
               <path class="ink" d="M12 19c-2.5 3-2.5 7 0 10" />
@@ -137,7 +157,8 @@
           Hover an atom and press <kbd>N</kbd> <kbd>O</kbd> <kbd>S</kbd> <kbd>F</kbd> <kbd>P</kbd> <kbd>C</kbd> <kbd>H</kbd>,
           <kbd>L</kbd>&nbsp;Cl, <kbd>B</kbd>&nbsp;Br, <kbd>I</kbd>, <kbd>+</kbd>/<kbd>−</kbd> for charge.
           Hover a bond: <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>W</kbd> wedge, <kbd>H</kbd> hash.
-          <kbd>Del</kbd> deletes. <kbd>T</kbd> tidies. Scroll or space-drag to pan; mouse wheel or Ctrl&#8209;scroll to zoom; <kbd>0</kbd> fits.
+          <kbd>Del</kbd> deletes. <kbd>T</kbd> tidies. <kbd>V</kbd> select tool, or <kbd>Shift</kbd>-drag; <kbd>Ctrl/⌘</kbd> <kbd>A</kbd> <kbd>C</kbd> <kbd>X</kbd> <kbd>V</kbd> <kbd>D</kbd>;
+          arrows nudge, <kbd>[</kbd> <kbd>]</kbd> turn. Scroll or space-drag to pan; mouse wheel or Ctrl&#8209;scroll to zoom; <kbd>0</kbd> fits.
         </p>
       </section>
 
@@ -146,6 +167,7 @@
           <span class="formula" id="formula"></span>
           <span class="weight" id="weight"></span>
           <span class="tag" id="example-tag" hidden>Example</span>
+          <span class="tag" id="scope-tag" hidden>Selection</span>
           <span class="issues" id="issues" hidden></span>
         </div>
         <div class="readout-smiles">

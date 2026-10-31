@@ -2,6 +2,7 @@ import './style.css';
 import { chargeText } from './core/chemistry';
 import { aspirin } from './example';
 import { ChemCanvasApp, type Readout } from './ui/app';
+import { copyText } from './ui/clipboard';
 import { ICONS } from './ui/icons';
 
 /** The single-file preview build: the host page owns downloads and the theme. */
@@ -62,11 +63,17 @@ const weightEl = $('#weight');
 const smilesEl = $('#smiles');
 const issuesEl = $('#issues');
 const exampleTag = $('#example-tag');
+const scopeTag = $('#scope-tag');
 const copySmiles = $<HTMLButtonElement>('#copy-smiles');
 let readoutUpdates = 0;
+let shownSmiles = '';
 
 function renderReadout(r: Readout): void {
   if (readoutUpdates++ > 0) exampleTag.hidden = true;
+  scopeTag.hidden = r.scope !== 'selection';
+  shownSmiles = r.smiles;
+  copySmiles.title = r.scope === 'selection' ? 'Copy SMILES of the selection' : 'Copy SMILES';
+  copySmiles.setAttribute('aria-label', copySmiles.title);
   formulaEl.replaceChildren();
   copySmiles.disabled = r.atoms === 0;
   if (r.atoms === 0) {
@@ -101,6 +108,7 @@ function renderReadout(r: Readout): void {
 
 const undoBtn = $<HTMLButtonElement>('#undo');
 const redoBtn = $<HTMLButtonElement>('#redo');
+const selectBtn = $<HTMLButtonElement>('#select');
 
 const appEl = $('#app');
 
@@ -126,36 +134,18 @@ const app = new ChemCanvasApp(appEl, $<HTMLCanvasElement>('#board'), {
     undoBtn.disabled = !canUndo;
     redoBtn.disabled = !canRedo;
   },
+  onTool(tool) {
+    selectBtn.setAttribute('aria-pressed', String(tool === 'select'));
+  },
   toast,
 });
 
+selectBtn.addEventListener('click', () => app.setTool(app.tool === 'select' ? 'draw' : 'select'));
 undoBtn.addEventListener('click', () => app.undo());
 redoBtn.addEventListener('click', () => app.redo());
 $('#fit').addEventListener('click', () => app.fit());
 $('#tidy').addEventListener('click', () => app.cleanup());
 $('#clear').addEventListener('click', () => app.clear());
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
-    document.body.append(area);
-    area.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    area.remove();
-    return ok;
-  }
-}
 
 async function copy(text: string | null, what: string): Promise<void> {
   if (!text || app.mol.isEmpty) {
@@ -165,7 +155,7 @@ async function copy(text: string | null, what: string): Promise<void> {
   toast((await copyText(text)) ? `${what} copied` : `Copying was blocked; select the text and copy it yourself`);
 }
 
-copySmiles.addEventListener('click', () => void copy(app.smiles(), 'SMILES'));
+copySmiles.addEventListener('click', () => void copy(shownSmiles, 'SMILES'));
 
 /** Save a file. Left out of the preview build, whose host page doesn't allow downloads. */
 const download = PREVIEW

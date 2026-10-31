@@ -95,6 +95,49 @@ const browser = await chromium.launch();
   await page.waitForTimeout(500);
   check('the wand straightens a distorted molecule', distorted > 0.1 && (await bondSpread()) < 1e-6, `bond length spread ${distorted.toFixed(2)} → ${(await bondSpread()).toExponential(1)}`);
 
+  // Right-click opens the menu for what's under the pointer.
+  const atomAt = (k) => page.evaluate((i) => window.chemcanvas.view.toScreen([...window.chemcanvas.mol.atoms.values()][i]), k);
+  const a2 = await atomAt(2);
+  await page.mouse.click(a2.x, a2.y, { button: 'right' });
+  await page.waitForTimeout(150);
+  check('right-click on an atom opens its menu', /atom$/.test((await page.locator('.ctx-head b').first().textContent()) ?? ''));
+  await page.keyboard.press('Escape');
+
+  // Select everything, flip it with the selection bar: the drawing changes, the compound doesn't.
+  await page.keyboard.press('Control+a');
+  await page.waitForTimeout(100);
+  const beforeFlip = await smiles();
+  await page.click('.selbar [data-key="flip-h"]');
+  check('the selection bar flips the selection without changing the compound', (await smiles()) === beforeFlip, await smiles());
+  await page.click('.selbar [data-key="duplicate"]');
+  check('Duplicate copies the selection', (await smiles()).split('.').length === 2 * beforeFlip.split('.').length, await smiles());
+  await page.click('.selbar [data-key="delete"]');
+  check('Delete removes the copy', (await smiles()) === beforeFlip);
+  await page.keyboard.press('Escape');
+
+  // Shift-drag on empty paper draws a selection box.
+  const ringBox = await page.evaluate(() => {
+    const app = window.chemcanvas;
+    const pts = [...app.mol.atoms.values()].slice(-5).map((a) => app.view.toScreen(a));
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    return { minX: Math.min(...xs) - 20, minY: Math.min(...ys) - 20, maxX: Math.max(...xs) + 20, maxY: Math.max(...ys) + 20 };
+  });
+  await page.keyboard.down('Shift');
+  await stroke([[ringBox.minX, ringBox.minY], [ringBox.maxX, ringBox.maxY]], 10);
+  await page.keyboard.up('Shift');
+  const picked = await page.evaluate(() => window.chemcanvas.selection.size);
+  check('Shift-drag selects with a box', picked >= 5, `${picked} atoms`);
+
+  // The ChemDraw-style analysis of the selection.
+  const cyclopentane = await page.evaluate(() => {
+    const app = window.chemcanvas;
+    app.select(app.mol.fragmentOf([...app.mol.atoms.keys()].at(-1)));
+    app.showAnalysis();
+    return document.querySelector('#analysis').textContent;
+  });
+  check('Analysis shows the exact mass of the selection', cyclopentane.includes('70.0783'), cyclopentane.replace(/\s+/g, ' ').slice(0, 90));
+  await page.keyboard.press('Escape');
+
   const svgOk = await page.evaluate(() => {
     const doc = new DOMParser().parseFromString(window.chemcanvas.svg(), 'image/svg+xml');
     return !doc.querySelector('parsererror');
@@ -142,6 +185,33 @@ const browser = await chromium.launch();
   await page.touchscreen.tap(a.x, a.y);
   await page.waitForTimeout(300);
   check('tapping an atom keeps the element wheel open', (await page.locator('.wheel-item').count()) > 0);
+  await touch('touchStart', [[200, 250]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(400);
+
+  // Hold and let go: the menu, as a sheet along the bottom edge.
+  await touch('touchStart', [[a.x, a.y]]);
+  await page.waitForTimeout(520);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+  check('hold and let go on an atom opens a bottom sheet', (await page.locator('.ctx.sheet:not([hidden])').count()) === 1);
+  await touch('touchStart', [[195, 40]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+
+  // Hold empty paper, then drag: a selection box.
+  const chain = await page.evaluate(() => {
+    const app = window.chemcanvas;
+    const pts = [...app.mol.atoms.values()].map((p) => app.view.toScreen(p));
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    return { minX: Math.min(...xs) - 16, minY: Math.min(...ys) - 24, maxX: Math.max(...xs) + 16, maxY: Math.max(...ys) + 24 };
+  });
+  await touch('touchStart', [[chain.minX, chain.minY]]);
+  await page.waitForTimeout(520);
+  for (let k = 1; k <= 8; k++) await touch('touchMove', [[chain.minX + ((chain.maxX - chain.minX) * k) / 8, chain.minY + ((chain.maxY - chain.minY) * k) / 8]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(150);
+  check('hold and drag on empty paper selects', (await page.evaluate(() => window.chemcanvas.selection.size)) === (await atoms()));
   check('no page errors (phone)', errors.length === 0, errors.join(' | '));
   await context.close();
 }

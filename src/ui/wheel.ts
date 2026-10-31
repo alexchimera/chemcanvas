@@ -153,7 +153,7 @@ export class Wheel {
   }
 
   /** Swap the hub for a text field (touch devices have no hardware keyboard). */
-  private promptSymbol(): void {
+  promptSymbol(): void {
     if (!this.hub) return;
     const input = document.createElement('input');
     input.className = 'wheel-input';

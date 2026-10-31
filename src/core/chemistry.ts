@@ -74,11 +74,17 @@ export interface Formula {
   charge: number;
 }
 
-export function formulaOf(mol: Molecule): Formula {
+/**
+ * Formula of the whole drawing, or of some of its atoms. Hydrogens are counted
+ * in context, so a selected methyl group off a ring reads CH3.
+ */
+export function formulaOf(mol: Molecule, atoms?: Iterable<number>): Formula {
   const counts = new Map<string, number>();
   let charge = 0;
   const bump = (el: string, n: number) => counts.set(el, (counts.get(el) ?? 0) + n);
-  for (const atom of mol.atoms.values()) {
+  for (const id of atoms ?? mol.atoms.keys()) {
+    const atom = mol.atoms.get(id);
+    if (!atom) continue;
     bump(atom.element, 1);
     const h = implicitHydrogens(mol, atom.id);
     if (h) bump('H', h);
@@ -110,8 +116,13 @@ export function formulaText(formula: Formula): string {
   return body + chargeText(formula.charge);
 }
 
-export function molecularWeight(mol: Molecule): number {
+/** Average molecular weight from standard atomic weights. */
+export function formulaWeight(counts: Map<string, number>): number {
   let total = 0;
-  for (const [el, n] of formulaOf(mol).counts) total += atomicMass(el) * n;
+  for (const [el, n] of counts) total += atomicMass(el) * n;
   return total;
+}
+
+export function molecularWeight(mol: Molecule, atoms?: Iterable<number>): number {
+  return formulaWeight(formulaOf(mol, atoms).counts);
 }
